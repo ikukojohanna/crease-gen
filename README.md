@@ -32,16 +32,16 @@ CreasePattern --planarize--> PlanarGraph --Laws--> FlatFoldable
 
 | Claim | File |
 |---|---|
-| A fold is a reflection; that is the whole instruction set | `Geometry.scala`, `Axioms.scala`, `Rigid.scala` |
-| Immutability is not a style choice, it is the physics | `Pattern.scala` |
-| A drawing is not a structure until you planarise it | `PlanarGraph.scala`, `Faces.scala` |
-| Mathematical laws as type constraints | `Laws.scala` |
-| Constraints leave freedom, so labelling is search | `Assigner.scala` |
-| A folded model is a product of reflections | `FoldedState.scala` |
-| Where the local laws run out | `Layers.scala`, `Overlap.scala` |
-| The proof-carrying result | `Folding.scala` |
-| The blueprint | `Svg.scala`, `Fold.scala` |
-| Worked examples, including ones that must fail | `Patterns.scala` |
+| A fold is a reflection; that is the whole instruction set | `geometry/` (`Line`, `Axioms`, `Rigid`) |
+| Immutability is not a style choice, it is the physics | `pattern/CreasePattern.scala` |
+| A drawing is not a structure until you planarise it | `pattern/Planarize.scala`, `pattern/Faces.scala` |
+| Mathematical laws as type constraints | `laws/Laws.scala`, `laws/FlatFoldable.scala` |
+| Constraints leave freedom, so labelling is search | `laws/Assigner.scala` |
+| A folded model is a product of reflections | `folding/FoldedState.scala` |
+| Where the local laws run out | `folding/Layers.scala`, `folding/Overlap.scala` |
+| The proof-carrying result | `folding/FoldedModel.scala` |
+| The blueprint | `output/Svg.scala`, `output/Fold.scala` |
+| Worked examples, including ones that must fail | `library/Patterns.scala` |
 
 ## The physics forces the functional style
 
