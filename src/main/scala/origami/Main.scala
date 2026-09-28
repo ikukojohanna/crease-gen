@@ -24,7 +24,7 @@ object Main:
     println(s"folding -> ${outDir.toAbsolutePath}\n")
     val foldedCount = models.count(model => process(model, outDir))
     println(s"$foldedCount of ${models.length} models fold.")
-
+gi
   private def selectModels(names: Set[String])(using Tol): Vector[Model] =
     Patterns.all.filter(m => names.isEmpty || names.contains(m.name))
 
