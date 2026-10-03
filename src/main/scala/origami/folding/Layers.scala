@@ -1,6 +1,7 @@
 package origami.folding
 
 import origami.geometry.{Pt, Tol, Triangulate}
+import origami.pattern.{Assignment, PlanarGraph}
 
 /** Which facet lies on top of which: Justin's taco-taco, taco-tortilla and tortilla-tortilla conditions. */
 object Layers:
@@ -21,6 +22,17 @@ object Layers:
         case Some(stacking)        => LayerVerdict.Stacked(stacking, overlaps, constraints)
         case None if solver.gaveUp => LayerVerdict.GaveUp(solver.steps, overlaps, constraints)
         case None                  => LayerVerdict.Impossible(overlaps, constraints)
+
+  /** Each unassigned crease labelled by the stacking: valley if it brings the moving facet on top of a
+    * face-up sheet, mountain otherwise.
+    */
+  def label(state: FoldedState, stacking: Stacking): PlanarGraph =
+    state.graph.withAssignments: (e, edge) =>
+      state.faces.facesAt(e) match
+        case Vector(left, right) if edge.assignment == Assignment.Unassigned =>
+          val rightOnTop = stacking.layerOf(right) > stacking.layerOf(left)
+          if rightOnTop == state.maps(left).facesUp then Assignment.Valley else Assignment.Mountain
+        case _ => edge.assignment
 
   /** How many layers lie over the thickest point of the model, sampled on a grid. */
   def maxDepth(state: FoldedState, samples: Int = 160)(using Tol): Int =

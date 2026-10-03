@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Twist Studio</title>
+<style>
+  :root { --bg: #fffdf7; --ink: #2c3e50; --muted: #7f8c8d; --line: #e5ded0; --bad: #c0392b; --good: #1e8449; --warn: #b9770e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+  header { padding: 12px 20px; border-bottom: 1px solid var(--line); font: 20px Georgia, serif; }
+  main { display: grid; grid-template-columns: 260px 1fr 1fr; gap: 16px; padding: 16px 20px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; padding: 10px 12px; }
+  legend { color: var(--muted); padding: 0 4px; }
+  label { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 6px; margin: 6px 0; }
+  label output { text-align: right; font-variant-numeric: tabular-nums; }
+  select, input[type=number] { width: 100%; }
+  button { width: 100%; margin: 4px 0; padding: 7px; border: 1px solid var(--ink); border-radius: 5px; background: #fff; color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--ink); color: #fff; }
+  .panel { min-width: 0; }
+  .panel h2 { font: 15px Georgia, serif; margin: 0 0 6px; }
+  .svg svg { max-width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
+  .status { margin: 6px 0; font-weight: bold; }
+  .ok { color: var(--good); } .bad { color: var(--bad); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+  ul { margin: 4px 0; padding-left: 18px; max-height: 180px; overflow: auto; }
+  .voronoi-only { display: none; } body.voronoi .voronoi-only { display: grid; }
+</style>
+</head>
+<body>
+<header>Twist Studio <span class="muted" style="font-size:13px">shrink-and-rotate twist tessellations</span></header>
+<main>
+  <div>
+    <fieldset><legend>Tiling</legend>
+      <label>Type <select id="kind">
+        <option value="trihexagonal">3.6.3.6 trihexagonal</option>
+        <option value="hexagonal">6.6.6 hexagonal</option>
+        <option value="square">4.4.4.4 square</option>
+        <option value="triangular">3.3.3.3.3.3 triangular</option>
+        <option value="voronoi">Voronoi, refined</option>
+      </select><span></span></label>
+      <label>Size <input id="size" type="range" min="1" max="8" step="1" value="2"><output></output></label>
+      <label class="voronoi-only">Depth <input id="depth" type="range" min="0" max="4" step="1" value="2"><output></output></label>
+      <label class="voronoi-only">Focus x <input id="fx" type="range" min="-0.8" max="0.8" step="0.05" value="0.1"><output></output></label>
+      <label class="voronoi-only">Focus y <input id="fy" type="range" min="-0.8" max="0.8" step="0.05" value="0.05"><output></output></label>
+    </fieldset>
+    <fieldset><legend>Twist</legend>
+      <label>Shrink s <input id="s" type="range" min="0.05" max="0.95" step="0.01" value="0.5"><output></output></label>
+      <label>Angle α° <input id="twist" type="range" min="-89" max="89" step="1" value="30"><output></output></label>
+    </fieldset>
+    <fieldset><legend>Paper</legend>
+      <label>Size mm <input id="paper" type="number" min="20" max="2000" step="10" value="200"><span></span></label>
+      <label>Min pleat mm <input id="minPleat" type="number" min="0" max="20" step="0.5" value="2"><span></span></label>
+    </fieldset>
+    <fieldset><legend>Check &amp; export</legend>
+      <label>Timeout s <input id="timeout" type="number" min="1" max="300" step="1" value="20"><span></span></label>
+      <button class="primary" id="check">Check folding</button>
+      <button id="svg">Export SVG (mm)</button>
+      <button id="fold">Export .fold</button>
+    </fieldset>
+  </div>
+  <section class="panel">
+    <h2>Crease pattern</h2>
+    <div class="status" id="patternStatus">…</div>
+    <div class="muted" id="stats"></div>
+    <div id="messages"></div>
+    <div class="svg" id="pattern"></div>
+  </section>
+  <section class="panel">
+    <h2>Folded</h2>
+    <div class="status" id="foldStatus"><span class="muted">press “Check folding”</span></div>
+    <div class="svg" id="folded"></div>
+  </section>
+</main>
+<script>
+  const ids = ["kind", "size", "depth", "fx", "fy", "s", "twist", "paper", "minPleat"];
+  const el = id => document.getElementById(id);
+  const query = () => ids.map(id => `${id}=${encodeURIComponent(el(id).value)}`).join("&");
+  const escape = s => s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"})[c]);
+
+  function showValues() {
+    document.querySelectorAll("label output").forEach(o => o.textContent = o.previousElementSibling.value);
+    document.body.classList.toggle("voronoi", el("kind").value === "voronoi");
+  }
+
+  let pending = null, latest = 0;
+  function refresh() {
+    showValues();
+    clearTimeout(pending);
+    pending = setTimeout(async () => {
+      const ticket = ++latest;
+      el("patternStatus").innerHTML = '<span class="muted">drawing…</span>';
+      try {
+        const r = await (await fetch("/pattern?" + query())).json();
+        if (ticket !== latest) return;
+        el("pattern").innerHTML = r.svg;
+        el("stats").textContent = r.stats;
+        el("patternStatus").innerHTML = r.problem
+          ? `<span class="bad">Rejected: ${escape(r.problem)}</span>`
+          : r.ok ? '<span class="ok">Local laws hold everywhere</span>'
+                 : `<span class="bad">${r.violationCount} local-law violation(s)</span>`;
+        const items = [...r.warnings.map(w => `<li class="warn">${escape(w)}</li>`),
+                       ...r.violations.map(v => `<li class="bad">${escape(v)}</li>`)];
+        el("messages").innerHTML = items.length ? `<ul>${items.join("")}</ul>` : "";
+        el("foldStatus").innerHTML = '<span class="muted">press “Check folding”</span>';
+        el("folded").innerHTML = "";
+      } catch (e) {
+        el("patternStatus").innerHTML = `<span class="bad">${escape(String(e))}</span>`;
+      }
+    }, 200);
+  }
+
+  el("check").onclick = async () => {
+    el("foldStatus").innerHTML = '<span class="muted">solving layers…</span>';
+    el("folded").innerHTML = "";
+    try {
+      const r = await (await fetch(`/fold?${query()}&timeout=${el("timeout").value}`)).json();
+      const cls = {"folds": "ok", "timeout": "warn", "busy": "warn"}[r.status] || "bad";
+      const text = r.status === "folds" ? `Folds: ${r.layers} layers thick (${r.millis} ms)`
+                 : r.status === "timeout" ? `Timeout: ${r.message}`
+                 : r.status === "busy" ? `Busy: ${r.message}`
+                 : r.status === "rejected" ? `Rejected: ${r.message}`
+                 : `Does not fold: ${r.message}`;
+      el("foldStatus").innerHTML = `<span class="${cls}">${escape(text)}</span>`;
+      if (r.svg) el("folded").innerHTML = r.svg;
+    } catch (e) {
+      el("foldStatus").innerHTML = `<span class="bad">${escape(String(e))}</span>`;
+    }
+  };
+  el("svg").onclick = () => { location.href = "/export.svg?" + query(); };
+  el("fold").onclick = () => { location.href = "/export.fold?" + query(); };
+  ids.forEach(id => el(id).addEventListener("input", refresh));
+  refresh();
+</script>
+</body>
+</html>

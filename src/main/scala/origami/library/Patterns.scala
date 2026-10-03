@@ -1,8 +1,9 @@
 package origami.library
 
-import origami.geometry.{Axioms, Line, Polygon, Pt, Tol}
+import origami.geometry.{Axioms, Geometry, Line, Polygon, Pt, Tol}
 import origami.laws.Symmetry
 import origami.pattern.{Assignment, CreasePattern}
+import origami.tiling.{Graded, ShrinkRotate, Tiling, Tilings}
 import origami.utils.SeqUtils.*
 
 object Patterns:
@@ -49,7 +50,9 @@ object Patterns:
       (Pt(i * cell + offset(j), j * height), Pt(i * cell + offset(j) + s * cell / 2, (j + 1) * height), slant)
 
     val cp = CreasePattern.blank(Polygon.rectangle(w, h)).creaseAll(ridges).creaseAll(slants)
-    Model("yoshimura", cp, s"$cols x $rows diamonds, degree-six vertices",
+    if uniform then Model("yoshimura", cp, s"$cols x $rows diamonds, ridges mountain, slants valley")
+    else Model("yoshimura-lines", cp, s"the Yoshimura's lines, $cols x $rows diamonds, every one unassigned",
+      caveat = Some(searchedCaveat("Yoshimura")),
       symmetries = Vector(Symmetry.halfTurn(Pt(w / 2, h / 2))))
 
   /** Maekawa allows only three of the four lines to fold; the fourth stays flat. */
@@ -71,7 +74,40 @@ object Patterns:
       .crease(b, d, Assignment.Flat)
     Model("preliminary-base", cp, "two midlines folded, one diagonal folded, one diagonal left flat")
 
-  def birdBase(size: Double = 200)(using tol: Tol): Model =
+  /** The bird base: geometry from the axioms, the textbook mountain-valley assignment. */
+  def birdBase(size: Double = 200)(using Tol): Model =
+    val g = birdGeometry(size)
+    // The crease lines alone don't determine the model: the same lines fold flat in other ways
+    // too (see `birdLines`), so the bird base is defined by its assignment, not found by search.
+    val cp = CreasePattern.square(size)
+      .crease(g.a, g.c, Assignment.Valley) // the spine
+      .crease(g.b, g.d, Assignment.Flat) // precreased, unfolded in the base
+      .creaseAll(g.edgeMids.map(m => (m, g.kite.minBy(_.distTo(m)), Assignment.Valley)))
+      .creaseAll(g.kite.map(k => (k, g.centre, Assignment.Mountain)))
+      .creaseAll(g.slants.map((corner, kitePoint) => (corner, kitePoint, Assignment.Mountain)))
+      .creaseAll(g.inner.map((p, q) => (p, q, Assignment.Flat))) // petal-fold precreases
+    Model("bird-base", cp,
+      s"geometry from axioms O1/O2/O3; ${g.kite.length} kite points found by intersection, " +
+        "textbook mountain-valley assignment")
+
+  /** The bird base's crease lines with no assignment. The diagonals and the inner square may also stay flat. */
+  def birdLines(size: Double = 200)(using Tol): Model =
+    val g = birdGeometry(size)
+    val cp = CreasePattern.square(size)
+      .crease(g.a, g.c, Assignment.Optional)
+      .crease(g.b, g.d, Assignment.Optional)
+      .fold(g.midV, Assignment.Unassigned)
+      .fold(g.midH, Assignment.Unassigned)
+      .creaseAll(g.slants.map((corner, kitePoint) => (corner, kitePoint, Assignment.Unassigned)))
+      .creaseAll(g.inner.map((p, q) => (p, q, Assignment.Optional)))
+    Model("bird-lines", cp, "the bird base's lines, unassigned; diagonals and inner square may stay flat",
+      caveat = Some(searchedCaveat("bird base")),
+      symmetries = Vector(Symmetry.mirror(Line.through(g.a, g.c))))
+
+  private final case class BirdGeometry(a: Pt, b: Pt, c: Pt, d: Pt, centre: Pt, midV: Line, midH: Line,
+      edgeMids: Vector[Pt], slants: Vector[(Pt, Pt)], kite: Vector[Pt], inner: Vector[(Pt, Pt)])
+
+  private def birdGeometry(size: Double)(using tol: Tol): BirdGeometry =
     val (a, b, c, d) = corners(size)
     val centre = Pt(size / 2, size / 2)
     val midV = Axioms.o2(a, b).get
@@ -99,18 +135,9 @@ object Patterns:
     val kite = slants.map(_._2).distinctWith(_ ~= _)
     val inner = kite.sortBy(p => (p - centre).angle).cyclicPairs
 
-    val cp = CreasePattern.square(size)
-      .crease(a, c, Assignment.Unassigned)
-      .crease(b, d, Assignment.Unassigned)
-      .fold(midV, Assignment.Unassigned)
-      .fold(midH, Assignment.Unassigned)
-      .creaseAll(slants.map((corner, kitePoint) => (corner, kitePoint, Assignment.Unassigned)))
-      .creaseAll(inner.map((p, q) => (p, q, Assignment.Unassigned)))
-
-    Model("bird-base", cp,
-      s"geometry from axioms O1/O2/O3; ${kite.length} kite points found by intersection, " +
-        "labelling by symmetry-constrained search",
-      symmetries = Vector(Symmetry.mirror(Line.through(a, c))))
+    // Where each midline meets the edge of the sheet.
+    val edgeMids = Vector(midV, midH).flatMap(l => Polygon.square(size).clip(l)).flatMap(s => Vector(s.a, s.b))
+    BirdGeometry(a, b, c, d, centre, midV, midH, edgeMids, slants, kite, inner)
 
   def waterbombTessellation(cols: Int = 5, rows: Int = 5, cell: Double = 38,
       uniform: Boolean = false)(using Tol): Model =
@@ -127,7 +154,9 @@ object Patterns:
       .creaseAll(verticals)
       .creaseAll(horizontals)
       .creaseAll(diagonals)
-    Model("waterbomb-tessellation", cp, s"$cols x $rows cells, degree-six vertices",
+    if uniform then Model("waterbomb-tessellation", cp, s"$cols x $rows cells, grid mountain, diagonals valley")
+    else Model("waterbomb-lines", cp, s"the waterbomb tessellation's lines, $cols x $rows cells, every one unassigned",
+      caveat = Some(searchedCaveat("waterbomb tessellation")),
       symmetries = Vector(Symmetry.halfTurn(Pt(w / 2, h / 2))))
 
   def uniformRule(using Tol): Model =
@@ -164,9 +193,37 @@ object Patterns:
       .crease(Pt(0, 0), Pt(size / 2, size / 2), Assignment.Valley)
     Model("dead-end", cp, "a crease ending in mid-sheet has nothing to fold against")
 
+  def hexTwists(size: Int = 2, s: Double = 0.5, twist: Double = 30)(using Tol): Model =
+    twists("hex-twists", Tilings.hexagonal(size), s"6.6.6 tiling, size $size", s, twist)
+
+  def squareTwists(size: Int = 2, s: Double = 0.5, twist: Double = 30)(using Tol): Model =
+    twists("square-twists", Tilings.square(size), s"4.4.4.4 tiling, size $size", s, twist)
+
+  def triangleTwists(size: Int = 2, s: Double = 0.5, twist: Double = 30)(using Tol): Model =
+    twists("triangle-twists", Tilings.triangular(size), s"3.3.3.3.3.3 tiling, size $size", s, twist)
+
+  def trihexTwists(size: Int = 2, s: Double = 0.5, twist: Double = 30)(using Tol): Model =
+    twists("trihex-twists", Tilings.trihexagonal(size), s"3.6.3.6 tiling, size $size", s, twist)
+
+  /** Voronoi cells growing denser towards a focus, refined `depth` times, pleats kept at least `minWidth` mm. */
+  def voronoiTwists(params: Graded.Params = Graded.Params(paperRadius = 100, spacing = 30, focus = Pt(15, 10),
+      focusRadius = 60), s: Double = 0.5, twist: Double = 30, minWidth: Double = 2)(using Tol): Model =
+    val pruned = Graded.pruned(params, s, Geometry.degrees(twist), minWidth)
+    val model = twists("voronoi-twists", pruned.tiling, s"Voronoi refined ${params.depth} times towards a focus", s, twist)
+    model.copy(note = model.note + s"; ${pruned.dropped.length} point(s) dropped for pleats under $minWidth mm")
+
   def all(using Tol): Vector[Model] = Vector(
     accordion(), miura(), yoshimura(), waterbombBase(), preliminaryBase(),
-    birdBase(), waterbombTessellation(), hypar(), uniformRule, impossibleX(), deadEnd())
+    birdBase(), birdLines(), waterbombTessellation(), hypar(), uniformRule, impossibleX(), deadEnd(),
+    hexTwists(), squareTwists(), triangleTwists(), trihexTwists(), voronoiTwists())
+
+  /** A shrink-and-rotate tessellation; the parameters here are fixed, so a rejection is a bug. */
+  private def twists(name: String, tiling: Tiling, what: String, s: Double, twist: Double)(using Tol): Model =
+    val cp = ShrinkRotate(tiling, s, Geometry.degrees(twist)).fold(p => throw IllegalArgumentException(p.explain), identity)
+    Model(name, cp, f"$what, shrunk to $s%.2f and turned $twist%.0f deg; labelled by construction")
+
+  private def searchedCaveat(model: String): String =
+    s"these are flat foldings of the $model's lines, found by search, not the $model itself."
 
   private def corners(size: Double): (Pt, Pt, Pt, Pt) =
     (Pt(0, 0), Pt(size, 0), Pt(size, size), Pt(0, size))

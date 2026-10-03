@@ -5,7 +5,7 @@ import origami.geometry.{Pt, Tol}
 import scala.collection.mutable
 
 /** Numbers points, giving points within tolerance of each other the same number. */
-private[pattern] final class PointIndex(tol: Tol):
+private[origami] final class PointIndex(tol: Tol):
   private val cellSize = tol.value * 4
   private val cells = mutable.HashMap.empty[(Long, Long), mutable.ArrayBuffer[Int]]
   private val points = mutable.ArrayBuffer.empty[Pt]

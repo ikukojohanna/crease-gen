@@ -9,7 +9,7 @@ final case class VertexInfo(
     index: Int,
     at: Pt,
     kind: VertexKind,
-    /** Folded or unassigned creases, sorted by direction. */
+    /** Folded or undecided creases, sorted by direction. */
     foldedEdges: Vector[Int],
     directions: Vector[Double]
 ):

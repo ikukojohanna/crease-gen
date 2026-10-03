@@ -55,5 +55,5 @@ object FoldedState:
     from(f.graph).getOrElse(throw AssertionError("a FlatFoldable folded inconsistently"))
 
   private def across(here: Rigid, g: PlanarGraph, faces: FaceGraph, edge: Int): Rigid =
-    if !g.edges(edge).assignment.isFolded then here
+    if !g.edges(edge).assignment.folds then here
     else here.compose(Rigid.reflection(faces.edgeSeg(edge).line))

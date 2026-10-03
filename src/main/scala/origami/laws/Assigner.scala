@@ -9,30 +9,21 @@ object Assigner:
   /** A set of creases that must get the same label. */
   type Unknown = Vector[Int]
 
-  /** Every labelling that passes the local laws, lazily. Symmetric ones only, if the symmetries allow it. */
-  def labellings(g: PlanarGraph, symmetries: Vector[Pt => Pt] = Vector.empty)(using Tol): Iterator[PlanarGraph] =
-    val unknowns = symmetricUnknowns(g, symmetries).getOrElse(eachCreaseAlone(g))
-    LabellingSearch(g, unknowns).results
+  /** Every way to leave each optional crease flat or folded, flat first. A folded one becomes unassigned, for
+    * the layer order to make a mountain or a valley. Symmetric choices only, if the symmetries allow it.
+    */
+  def choices(g: PlanarGraph, symmetries: Vector[Pt => Pt] = Vector.empty)(using Tol): Iterator[PlanarGraph] =
+    val unknowns = symmetricUnknowns(g, symmetries).getOrElse(eachCreaseAlone(g)).toList
+    def settle(rest: List[Unknown], chosen: Map[Int, Assignment]): Iterator[PlanarGraph] = rest match
+      case Nil => Iterator.single(g.withAssignments((i, e) => chosen.getOrElse(i, e.assignment)))
+      case unknown :: more =>
+        Iterator(Assignment.Flat, Assignment.Unassigned).flatMap(a => settle(more, chosen ++ unknown.map(_ -> a)))
+    settle(unknowns, Map.empty)
 
-  def solve(g: PlanarGraph)(using Tol): Option[PlanarGraph] =
-    LabellingSearch(g, eachCreaseAlone(g)).results.nextOption()
-
-  def solvePreferSymmetric(g: PlanarGraph, symmetries: Vector[Pt => Pt])(using Tol): Option[PlanarGraph] =
-    symmetricUnknowns(g, symmetries)
-      .flatMap(unknowns => LabellingSearch(g, unknowns).results.nextOption())
-      .orElse(solve(g))
-
-  /** Forget every mountain and valley, keeping only the geometry. */
-  def blank(g: PlanarGraph): PlanarGraph =
-    g.withAssignments: (_, e) =>
-      e.assignment match
-        case Assignment.Boundary | Assignment.Flat => e.assignment
-        case _                                     => Assignment.Unassigned
-
-  private def isUnassigned(g: PlanarGraph)(e: Int): Boolean = g.assignment(e) == Assignment.Unassigned
+  private def isOptional(g: PlanarGraph)(e: Int): Boolean = g.assignment(e) == Assignment.Optional
 
   private def eachCreaseAlone(g: PlanarGraph): Vector[Unknown] =
-    g.edges.indices.filter(isUnassigned(g)).map(Vector(_)).toVector
+    g.edges.indices.filter(isOptional(g)).map(Vector(_)).toVector
 
   /** Creases a symmetry maps onto each other share one unknown. None if a symmetry maps a crease off the pattern. */
   private def symmetricUnknowns(g: PlanarGraph, symmetries: Vector[Pt => Pt])(using Tol): Option[Vector[Unknown]] =
@@ -40,7 +31,7 @@ object Assigner:
     Option.when(symmetries.nonEmpty && images.forall(_._2.isDefined)):
       val orbits = UnionFind(g.edges.length)
       images.foreach((i, j) => orbits.union(i, j.get))
-      g.edges.indices.filter(isUnassigned(g)).groupBy(orbits.find).values.map(_.toVector).toVector.sortBy(_.head)
+      g.edges.indices.filter(isOptional(g)).groupBy(orbits.find).values.map(_.toVector).toVector.sortBy(_.head)
 
   /** The edge a symmetry maps `e` onto, if there is one with the same assignment. */
   private def image(g: PlanarGraph, e: Edge, symmetry: Pt => Pt)(using Tol): Option[Int] =

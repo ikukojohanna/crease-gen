@@ -40,14 +40,14 @@ private[folding] final class StackingProblem(state: FoldedState, conditions: Lay
     state.graph.edges.indices.toVector.flatMap: e =>
       val sides = state.faces.facesAt(e)
       val assignment = state.graph.assignment(e)
-      Option.when((assignment.isFolded || assignment == Assignment.Flat) && sides.length == 2):
+      Option.when((assignment.folds || assignment == Assignment.Flat) && sides.length == 2):
         FoldedCrease(state.maps(sides(0))(state.faces.edgeSeg(e)), sides(0), sides(1), assignment)
 
-  /** At every fold, the relation between its two facets, which the fold itself decides. */
-  val forced: Vector[(Int, Int)] = creases.filter(_.folded).map(topAndBottom)
+  /** At every mountain or valley, the relation between its two facets, which the label decides. */
+  val forced: Vector[(Int, Int)] = creases.filter(_.assignment.isFolded).map(topAndBottom)
 
   val constraints: Vector[Vector[(Int, Int)]] =
-    (if conditions.tacoTaco then tacoTaco else Vector.empty) ++ creaseThroughFacet
+    alongOneLine ++ creaseThroughFacet
 
   /** Valley-folding a face-up sheet puts the moving facet on top; a mountain or a face-down sheet swaps that. */
   private def topAndBottom(crease: FoldedCrease): (Int, Int) =
@@ -55,14 +55,19 @@ private[folding] final class StackingProblem(state: FoldedState, conditions: Lay
     val rightOnTop = if state.maps(crease.left).facesUp then valley else !valley
     if rightOnTop then (crease.right, crease.left) else (crease.left, crease.right)
 
-  /** Two folds on the same line may nest, but not interleave. */
-  private def tacoTaco: Vector[Vector[(Int, Int)]] =
+  /** Two creases on the same line, folded or flat: neither may pass through the other. */
+  private def alongOneLine: Vector[Vector[(Int, Int)]] =
     for
       i <- creases.indices.toVector
       j <- (i + 1) until creases.length
       (t1, t2) = (creases(i), creases(j))
-      if t1.folded && t2.folded && onSameLine(t1, t2) && openSameWay(t1, t2)
-      constraint <- nestOrMiss(t1, t2)
+      if Set(t1.left, t1.right, t2.left, t2.right).size == 4 && onSameLine(t1, t2)
+      constraint <- (t1.folded, t2.folded) match
+        case (true, true) if conditions.tacoTaco && openSameWay(t1, t2) => nestOrMiss(t1, t2)
+        case (true, false) if conditions.tacoTortilla                   => staysOutside(t1, t2)
+        case (false, true) if conditions.tacoTortilla                   => staysOutside(t2, t1)
+        case (false, false) if conditions.tortillaTortilla              => sideBySide(t1, t2)
+        case _                                                          => None
     yield constraint
 
   /** A crease through a facet keeps that facet on one side of both of the crease's facets. */
@@ -78,7 +83,19 @@ private[folding] final class StackingProblem(state: FoldedState, conditions: Lay
   private def nestOrMiss(t1: FoldedCrease, t2: FoldedCrease): Option[Vector[(Int, Int)]] =
     val (a, b, c, d) = (t1.left, t1.right, t2.left, t2.right)
     val relations = Vector((a, c), (b, c), (a, d), (b, d))
-    Option.when(Set(a, b, c, d).size == 4 && relations.forall(overlapping))(relations)
+    Option.when(relations.forall(overlapping))(relations)
+
+  /** A flat crease on a fold's line: the paper on the fold's side carries on across the line, so it
+    * cannot sit inside the fold.
+    */
+  private def staysOutside(fold: FoldedCrease, flat: FoldedCrease): Option[Vector[(Int, Int)]] =
+    val inside = if side(fold, flat.left) == side(fold, fold.left) then flat.left else flat.right
+    sameSide(fold.left, fold.right, inside)
+
+  /** Two flat creases on one line: whichever is on top on one side of the line is on top on the other. */
+  private def sideBySide(t1: FoldedCrease, t2: FoldedCrease): Option[Vector[(Int, Int)]] =
+    val (c, d) = if side(t1, t2.left) == side(t1, t1.left) then (t2.left, t2.right) else (t2.right, t2.left)
+    Option.when(overlapping(t1.left, c) && overlapping(t1.right, d))(Vector((t1.left, c), (t1.right, d)))
 
   private def sameSide(a: Int, b: Int, c: Int): Option[Vector[(Int, Int)]] =
     Option.when(a != b && overlapping(a, c) && overlapping(b, c))(Vector((a, c), (b, c)))
@@ -88,11 +105,13 @@ private[folding] final class StackingProblem(state: FoldedState, conditions: Lay
 
   /** Back to back, two folds on one line never meet. */
   private def openSameWay(t1: FoldedCrease, t2: FoldedCrease): Boolean =
-    val l = t1.seg.line
-    def side(f: Int): Double = math.signum(l.signedDist(facets(f).centroid))
-    side(t1.left) == side(t1.right) && side(t2.left) == side(t2.right) && side(t1.left) == side(t2.left)
+    side(t1, t1.left) == side(t1, t1.right) && side(t1, t2.left) == side(t1, t2.right) &&
+      side(t1, t1.left) == side(t1, t2.left)
+
+  /** Which side of the crease's line a folded facet lies on. */
+  private def side(t: FoldedCrease, f: Int): Double = math.signum(t.seg.line.signedDist(facets(f).centroid))
 
 private[folding] object StackingProblem:
   /** A crease where it lands in the folded model, with the facets on either side of it. */
   final case class FoldedCrease(seg: Seg, left: Int, right: Int, assignment: Assignment):
-    def folded: Boolean = assignment.isFolded
+    def folded: Boolean = assignment.folds

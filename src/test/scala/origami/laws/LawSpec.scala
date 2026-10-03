@@ -1,5 +1,6 @@
 package origami.laws
 
+import origami.folding.FoldedModel
 import origami.geometry.Tol
 import origami.library.{Model, Patterns}
 import origami.pattern.{Assignment, PlanarGraph}
@@ -9,8 +10,8 @@ class LawSpec extends munit.FunSuite:
 
   private def decide(m: Model): PlanarGraph =
     val g = m.pattern.planarize
-    if g.edges.exists(_.assignment == Assignment.Unassigned) then
-      Assigner.solvePreferSymmetric(g, m.symmetries).getOrElse(g)
+    if g.edges.exists(_.assignment.isUndecided) then
+      FoldedModel.searchAll(g, m.symmetries, rankMillis = 0).map(_.best.graph).getOrElse(g)
     else g
 
   private val foldable = Vector(
@@ -57,13 +58,13 @@ class LawSpec extends munit.FunSuite:
   }
 
   test("the solver respects creases that are already decided") {
-    val m = Patterns.birdBase()
+    val m = Patterns.birdLines()
     val g = m.pattern.planarize
     val pinned = g.withAssignments((_, e) =>
       if e.assignment == Assignment.Unassigned && e.u == 0 then Assignment.Mountain else e.assignment)
     val fixed = pinned.edges.zipWithIndex.collect { case (e, i) if e.assignment.isFolded => i }
-    Assigner.solve(pinned).foreach: solved =>
-      fixed.foreach(i => assertEquals(solved.edges(i).assignment, pinned.edges(i).assignment))
+    FoldedModel.searchAll(pinned, rankMillis = 0).foreach: solved =>
+      fixed.foreach(i => assertEquals(solved.best.graph.edges(i).assignment, pinned.edges(i).assignment))
   }
 
   test("FlatFoldable can only be built by passing the laws") {

@@ -22,7 +22,7 @@ final case class PlanarGraph(vertices: Vector[Pt], edges: Vector[Edge], paper: P
 
   def info(i: Int)(using Tol): VertexInfo =
     val folded = incident(i)
-      .filter(e => edges(e).assignment.isFolded || edges(e).assignment == Assignment.Unassigned)
+      .filter(e => edges(e).assignment.isFolded || edges(e).assignment.isUndecided)
       .map(e => (e, direction(e, i)))
       .sortBy(_._2)
     VertexInfo(i, vertices(i), kind(i), folded.map(_._1), folded.map(_._2))

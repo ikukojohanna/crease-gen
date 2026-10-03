@@ -1,8 +1,8 @@
 package origami.pattern
 
 import origami.geometry.{Line, Polygon, Pt, Tol, Vec}
-import origami.laws.Assigner
 import origami.library.Patterns
+import origami.output.Fold
 
 import scala.math.Pi
 
@@ -34,6 +34,13 @@ class PatternSpec extends munit.FunSuite:
     assertEquals(cp.flipOver.flipOver.creases, cp.creases)
   }
 
+  test("an optional crease is written to FOLD as unassigned") {
+    val cp = CreasePattern.square(100).crease(Pt(0, 0), Pt(100, 100), Assignment.Optional)
+    val fold = Fold(cp, "optional")
+    assert(fold.contains("\"U\""))
+    assert(!fold.contains("\"O\""), "O is not a FOLD assignment")
+  }
+
   test("crossing creases meet at a shared vertex after planarisation") {
     val cp = CreasePattern.square(100)
       .crease(Pt(0, 0), Pt(100, 100), Assignment.Mountain)
@@ -53,7 +60,7 @@ class PatternSpec extends munit.FunSuite:
 
   test("sectors around any vertex sum to a full turn") {
     val g = Patterns.birdBase().pattern.planarize
-    Assigner.solve(g).getOrElse(g).interiorVertices.foreach: v =>
+    g.interiorVertices.foreach: v =>
       assertEqualsDouble(v.sectors.sum, 2 * Pi, 1e-9)
   }
 

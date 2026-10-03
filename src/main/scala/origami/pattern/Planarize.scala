@@ -1,7 +1,7 @@
 package origami.pattern
 
 import origami.geometry.{Seg, Tol}
-import origami.pattern.Assignment.{Boundary, Unassigned}
+import origami.pattern.Assignment.Boundary
 import origami.utils.SeqUtils.*
 
 import scala.collection.mutable
@@ -40,10 +40,10 @@ object Planarize:
     val ts = (Vector(0.0, 1.0) ++ cuts).map(_.max(0.0).min(1.0)).sorted
     ts.distinctConsecutiveWith((a, b) => math.abs(a - b) <= eps).sliding(2).collect { case Vector(t0, t1) => (t0, t1) }
 
-  /** Creases drawn on top of each other are one crease: the boundary wins, then the first assigned one. */
+  /** Creases drawn on top of each other are one crease: the boundary wins, then the first decided one. */
   private def merge(existing: Option[Assignment], incoming: Assignment): Assignment =
     existing match
       case None                            => incoming
       case Some(_) if incoming == Boundary => Boundary
-      case Some(Unassigned)                => incoming
+      case Some(current) if current.isUndecided => incoming
       case Some(current)                   => current

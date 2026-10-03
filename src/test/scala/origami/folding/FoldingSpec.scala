@@ -3,7 +3,7 @@ package origami.folding
 import origami.geometry.{Line, Pt, Rigid, Tol}
 import origami.laws.{Assigner, Laws, Violation}
 import origami.library.{Model, Patterns}
-import origami.pattern.{Assignment, CreasePattern, Faces}
+import origami.pattern.{Assignment, CreasePattern, Faces, PlanarGraph}
 
 class FoldingSpec extends munit.FunSuite:
   given tol: Tol = Tol(1e-7)
@@ -11,8 +11,8 @@ class FoldingSpec extends munit.FunSuite:
   private def fold(m: Model): FoldedModel =
     val g = m.pattern.planarize
     val r =
-      if g.edges.exists(_.assignment == Assignment.Unassigned) then
-        FoldedModel.search(g, m.symmetries, millis = 60000).map(_._1)
+      if g.edges.exists(_.assignment == Assignment.Optional) then
+        FoldedModel.searchAll(g, m.symmetries, rankMillis = 0).map(_.best)
       else FoldedModel.of(g)
     r.fold(why => fail(s"${m.name} did not fold: ${why.explain}"), identity)
 
@@ -131,14 +131,67 @@ class FoldingSpec extends munit.FunSuite:
     assertEquals(without.ok, true, "taco-taco is what rules this one out")
   }
 
-  test("the local laws are not enough, and the search is what closes the gap") {
-    val g = Assigner.blank(Patterns.birdBase().pattern.planarize)
-    val locallyValid = Assigner.labellings(g).take(40).toVector
-    assert(locallyValid.length == 40)
-    locallyValid.foreach(s => assertEquals(Laws.checkAll(s), Vector.empty))
-    val folds = locallyValid.count(s => FoldedModel.of(s).isRight)
-    assert(folds < locallyValid.length,
-      "if every locally valid labelling folded, the layer solver would be pointless")
+  test("unassigned creases get mountain or valley from the layer order") {
+    val m = fold(Patterns.yoshimura())
+    assert(m.graph.edges.forall(e => !e.assignment.isUndecided), "every crease is labelled")
+    assertEquals(Laws.checkAll(m.graph), Vector.empty)
+  }
+
+  test("only a crease marked optional may stay flat") {
+    val size = 200.0
+    val cp = CreasePattern.square(size)
+      .crease(Pt(0, 0), Pt(size, size), Assignment.Unassigned)
+      .crease(Pt(size, 0), Pt(0, size), Assignment.Unassigned)
+      .crease(Pt(size / 2, 0), Pt(size / 2, size), Assignment.Optional)
+      .crease(Pt(0, size / 2), Pt(size, size / 2), Assignment.Optional)
+    val g = cp.planarize
+    val labellings = Assigner.choices(g).toVector
+    def flatAt(l: PlanarGraph, from: Assignment) =
+      l.edges.indices.filter(i => g.edges(i).assignment == from).map(l.edges(_).assignment)
+    assert(labellings.exists(l => flatAt(l, Assignment.Optional).contains(Assignment.Flat)), "a midline can stay flat")
+    labellings.foreach: l =>
+      assert(flatAt(l, Assignment.Unassigned).forall(_ == Assignment.Unassigned), "a diagonal must fold")
+    assert(labellings.map(FoldedModel.of(_)).exists(_.toOption.exists(_.thickness == 4)),
+      "one midline flat: the waterbomb base")
+  }
+
+  test("ranked search: fewest layers first") {
+    val m = Patterns.birdLines()
+    val ranked = FoldedModel.searchAll(m.pattern.planarize, m.symmetries, rankMillis = 1000)
+      .fold(why => fail(why.explain), identity)
+    val thickness = ranked.models.map(_.thickness)
+    assertEquals(thickness, thickness.sorted)
+    assert(ranked.best.graph.edges.exists(_.assignment == Assignment.Flat), "the thinnest leaves something flat")
+  }
+
+  test("a flat crease on a fold's line is paper too: no layer slips through it") {
+    val m = Patterns.birdLines()
+    val ranked = FoldedModel.searchAll(m.pattern.planarize, m.symmetries, rankMillis = 1000)
+      .fold(why => fail(why.explain), identity)
+    ranked.models.foreach: f =>
+      val st = f.state
+      val layer = f.stacking.layerOf
+      val eps = math.sqrt(st.graph.paper.area) * 1e-6
+      val creases = st.graph.edges.indices.flatMap: e =>
+        val (kind, sides) = (st.graph.assignment(e), st.faces.facesAt(e))
+        Option.when((kind.isFolded || kind == Assignment.Flat) && sides.length == 2):
+          (st.maps(sides(0))(st.faces.edgeSeg(e)), sides(0), sides(1), kind.isFolded)
+      def side(l: Line, x: Int) = math.signum(l.signedDist(st.folded(x).centroid))
+      def between(x: Int, a: Int, b: Int) = layer(x) > (layer(a) min layer(b)) && layer(x) < (layer(a) max layer(b))
+      for
+        (s1, a, b, fold1) <- creases
+        (s2, c, d, fold2) <- creases
+        if Set(a, b, c, d).size == 4 && s1.line.sameAs(s2.line) && s1.collinearOverlap(s2, eps).isDefined
+      do
+        val l = s1.line
+        val crosses = (fold1, fold2) match
+          case (true, true)  => side(l, a) == side(l, c) && between(c, a, b) != between(d, a, b)
+          case (true, false) => between(if side(l, c) == side(l, a) then c else d, a, b)
+          case (false, true) => false // the (true, false) case, seen from the other crease
+          case (false, false) =>
+            val (c1, d1) = if side(l, a) == side(l, c) then (c, d) else (d, c)
+            (layer(a) < layer(c1)) != (layer(b) < layer(d1))
+        assert(!crosses, s"paper crosses itself where creases ($a,$b) and ($c,$d) meet at ${s1.midpoint}")
   }
 
   test("a FoldedModel cannot be built for something that does not fold") {

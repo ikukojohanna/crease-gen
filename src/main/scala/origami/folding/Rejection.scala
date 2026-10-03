@@ -10,4 +10,4 @@ enum Rejection:
   def explain: String = this match
     case LocalLaws(vs)  => s"${vs.length} local violation(s): ${vs.head.explain}"
     case Layers(v)      => v.describe
-    case NoLabelling(n) => s"searched $n labelling(s), none of them folds"
+    case NoLabelling(n) => s"tried $n ways to leave the optional creases flat or folded, none of them folds"

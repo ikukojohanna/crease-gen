@@ -25,15 +25,17 @@ object Svg:
       creases(cp, px, opts),
       cp.paper.edges.map(line(px, _, opts.boundary)).mkString("\n"),
       if opts.showVertices then vertexDots(cp, px) else "",
+      opts.marks.map(px(_)).map((x, y) => f"""  <circle cx="$x%.2f" cy="$y%.2f" r="7" fill="none" stroke="#e67e22" stroke-width="2.5"/>""")
+        .mkString("\n"),
       if opts.showLegend then legend(opts, y = fullH - opts.margin / 2 - 8) else ""
     ))
 
   def render(f: FlatFoldable, opts: SvgOptions)(using Tol): String =
     render(f.pattern, opts)
 
-  /** Flat and unassigned creases first, so the folds draw on top of them. */
+  /** Flat and undecided creases first, so the folds draw on top of them. */
   private def creases(cp: CreasePattern, px: Projection, opts: SvgOptions): String =
-    val (faint, folds) = cp.creases.partition(c => c.assignment == Assignment.Flat || c.assignment == Assignment.Unassigned)
+    val (faint, folds) = cp.creases.partition(c => c.assignment == Assignment.Flat || c.assignment.isUndecided)
     (faint ++ folds).map(c => line(px, c.seg, opts.styleFor(c.assignment))).mkString("\n")
 
   private def line(px: Projection, s: Seg, style: Style): String =

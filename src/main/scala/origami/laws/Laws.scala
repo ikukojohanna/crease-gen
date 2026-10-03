@@ -28,7 +28,7 @@ object Laws:
       Option.when(left == right && left.isFolded)(Violation.BigLittleBig(v.at, s.angle))
 
   def undecided(g: PlanarGraph, v: VertexInfo): Option[Violation] =
-    Option.when(v.foldedEdges.exists(e => g.assignment(e) == Assignment.Unassigned))(
+    Option.when(v.foldedEdges.exists(e => g.assignment(e).isUndecided))(
       Violation.Undecided(v.at))
 
   def deadEnd(v: VertexInfo): Option[Violation] =
